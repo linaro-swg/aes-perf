@@ -42,7 +42,13 @@ ta:
 	$(q)$(MAKE) -C ta O=$(out-dir)/ta
 
 .PHONY: clean
-clean:
-	$(q)$(MAKE) -C host O=$(out-dir)/aes-perf q=$(q) $@
-	$(q)$(MAKE) -C ta O=$(out-dir)/ta q=$(q) $@
+clean: clean-aes-perf clean-ta
+
+.PHONY: clean-aes-perf
+clean-aes-perf:
+	$(q)$(MAKE) -C host O=$(out-dir)/aes-perf q=$(q) clean
+
+.PHONY: clean-ra
+clean-ta:
+	$(q)$(MAKE) -C ta O=$(out-dir)/ta q=$(q) clean
 

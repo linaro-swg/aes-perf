@@ -9,3 +9,4 @@ $(O)/$(BINARY).ta: $(O)/$(BINARY).bin
 	@$(cmd-echo-silent) '  GEN    $@'
 	@rm -f $@
 	@cat faked_armv7_uta_signed_header.bin $< > $@
+
