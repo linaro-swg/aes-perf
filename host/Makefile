@@ -17,11 +17,11 @@ CFLAGS += -I$(OPTEE_CLIENT_PATH)/out/export/include
 LDFLAGS += -L$(OPTEE_CLIENT_PATH)/out/export/lib -lteec
 
 .PHONY: all
-all: aes-perf
+all: $(O)/aes-perf
 
-aes-perf: $(objs)
-	@$(cmd-echo-silent) '  CC      $(O)/$@'
-	$(q)$(CC) -o $(O)/$@ $+ $(LDFLAGS)
+$(O)/aes-perf: $(objs)
+	@$(cmd-echo-silent) '  CC      $@'
+	$(q)$(CC) -o $@ $+ $(LDFLAGS)
 
 $(O)/%.o: $(CURDIR)/%.c
 	$(q)mkdir -p $(O)/host
