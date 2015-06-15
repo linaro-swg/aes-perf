@@ -28,12 +28,16 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <stdint.h>
+#include <string.h>
 #include <time.h>
-#include <math.h>
+#include <unistd.h>
+
+#include <tee_client_api.h>
+#include "ta_aes_perf.h"
 
 /* Default buffer size (-s) */
 #define DEF_S 1024
@@ -52,6 +56,42 @@ static int verbosity = 0;
 
 #define verbose(...)  _verbose(1, __VA_ARGS__)
 #define vverbose(...) _verbose(2, __VA_ARGS__)
+
+/*
+ * TEE client stuff
+ */
+
+static TEEC_Context ctx;
+static TEEC_Session sess;
+static TEEC_SharedMemory in_shm = {
+	.flags = TEEC_MEM_INPUT
+};
+
+static void errx(const char *msg, TEEC_Result res)
+{
+	fprintf(stderr, "%s: 0x%08x", msg, res);
+	exit (1);
+}
+
+static void check_res(TEEC_Result res, const char *errmsg)
+{
+	if (res != TEEC_SUCCESS)
+		errx(errmsg, res);
+}
+
+static void open_ta()
+{
+	TEEC_Result res;
+	TEEC_UUID uuid = TA_AES_PERF_UUID;
+	uint32_t err_origin;
+
+	res = TEEC_InitializeContext(NULL, &ctx);
+	check_res(res,"TEEC_InitializeContext");
+
+	res = TEEC_OpenSession(&ctx, &sess, &uuid, TEEC_LOGIN_PUBLIC, NULL,
+			       NULL, &err_origin);
+	check_res(res,"TEEC_OpenSession");
+}
 
 /*
  * Statistics
@@ -111,12 +151,19 @@ static void usage(const char *progname)
 
 static void *alloc_inbuf(size_t sz)
 {
-	return malloc(sz);
+	TEEC_Result res;
+
+	in_shm.buffer = NULL;
+	in_shm.size = sz;
+	res = TEEC_AllocateSharedMemory(&ctx, &in_shm);
+	check_res(res, "TEEC_AllocateSharedMemory");
+
+	return in_shm.buffer;
 }
 
-static void free_inbuf(void *buf)
+static void free_inbuf()
 {
-	free(buf);
+	TEEC_ReleaseSharedMemory(&in_shm);
 }
 
 static ssize_t read_random(void *in, size_t rsize)
@@ -164,15 +211,17 @@ static long timspec_diff(struct timespec *start, struct timespec *end)
 	return ns;
 }
 
-static long run_test_once(void *in, size_t size)
+static long run_test_once(void *in, size_t size, TEEC_Operation *op)
 {
-	int i;
 	struct timespec t0, t1;
-	long ns;
+	TEEC_Result res;
+	uint32_t ret_origin;
 
-	get_current_time(&t0); /* TODO: move after read */
 	read_random(in, size);
-	/* TODO: Encrypt or decrypt buffer */
+	get_current_time(&t0);
+	res = TEEC_InvokeCommand(&sess, TA_AES_PERF_CMD_ENCRYPT, op,
+				 &ret_origin);
+	check_res(res, "TEEC_InvokeCommand");
 	get_current_time(&t1);
 
 	return timspec_diff(&t0, &t1);
@@ -181,26 +230,30 @@ static long run_test_once(void *in, size_t size)
 /* Encryption test: buffer of tsize byte. Run test n times. */
 static void run_test(size_t size, unsigned int n)
 {
-	void *in;
 	long t;
 	struct statistics stats = {0, };
+	TEEC_Result res;
+	TEEC_Operation op;
 
-	in = alloc_inbuf(size);
-	if (!in) {
-		fprintf(stderr, "allocation failed\n");
-		exit(1);
-	}
+	alloc_inbuf(size);
+
+	memset(&op, 0, sizeof(op));
+	op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_PARTIAL_INPUT, TEEC_NONE,
+					 TEEC_NONE, TEEC_NONE);
+	op.params[0].memref.parent = &in_shm;
+	op.params[0].memref.offset = 0;
+	op.params[0].memref.size = in_shm.size;
 
 	printf("Starting test: size = %zu bytes, # loops = %u\n", size, n);
 	while (n-- > 0) {
-		t = run_test_once(in, size);
+		t = run_test_once(in_shm.buffer, size, &op);
 		update_stats(&stats, t);
 		if (n % 1000 == 0)
 			verbose("#");
 	}
 	verbose("\n");
 
-	free_inbuf(in);
+	free_inbuf();
 	printf("Done. n=%d: min=%g max=%g mean=%g stddev=%g\n",
 	       stats.n, stats.min, stats.max, stats.m, stddev(&stats));
 }
@@ -238,6 +291,8 @@ int main(int argc, char *argv[])
 	}
 	printf("Note: clock resolution is %lu ns.\n", ts.tv_sec*1000000000 +
 	       ts.tv_nsec);
+
+	open_ta();
 
 	run_test(size, n);
 
