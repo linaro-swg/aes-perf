@@ -166,6 +166,10 @@ TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 		algo = TEE_ALG_AES_CBC_NOPAD;
 		use_iv = 1;
 		break;
+	case TA_AES_CTR:
+		algo = TEE_ALG_AES_CTR;
+		use_iv = 1;
+		break;
 	default:
 		return TEE_ERROR_BAD_PARAMETERS;
 	}

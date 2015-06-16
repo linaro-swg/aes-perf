@@ -150,6 +150,8 @@ static const char *mode_str(uint32_t mode)
 		return "ECB";
 	case TA_AES_CBC:
 		return "CBC";
+	case TA_AES_CTR:
+		return "CTR";
 	default:
 		return "???";
 	}
@@ -166,7 +168,8 @@ static void usage(const char *progname)
 	fprintf(stderr, "  -k    Key size in bits: 128, 192 or 256 [%u]\n",
 			keysize);
 	fprintf(stderr, "  -l    Inner loop iterations [%u]\n", l);
-	fprintf(stderr, "  -m    AES mode: ECB, CBC [%s]\n", mode_str(mode));
+	fprintf(stderr, "  -m    AES mode: ECB, CBC, CTR [%s]\n",
+			mode_str(mode));
 	fprintf(stderr, "  -n    Outer loop iterations [%u]\n", n);
 	fprintf(stderr, "  -s    Buffer size (process size bytes at a time) ");
 	fprintf(stderr, "[%u]\n", size);
@@ -349,6 +352,8 @@ int main(int argc, char *argv[])
 				mode = TA_AES_ECB;
 			else if (!strcasecmp(argv[i], "CBC"))
 				mode = TA_AES_CBC;
+			else if (!strcasecmp(argv[i], "CTR"))
+				mode = TA_AES_CTR;
 			else {
 				fprintf(stderr, "%s, invalid mode\n",
 					argv[0]);
