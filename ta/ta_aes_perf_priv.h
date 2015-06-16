@@ -30,7 +30,7 @@
 
 #include <tee_api.h>
 
-TEE_Result cmd_encrypt(uint32_t param_types, TEE_Param params[4]);
-TEE_Result cmd_decrypt(uint32_t param_types, TEE_Param params[4]);
+TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4]);
+TEE_Result cmd_process(uint32_t param_types, TEE_Param params[4]);
 
 #endif /* TA_EAS_PERF_PRIV_H */

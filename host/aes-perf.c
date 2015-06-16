@@ -234,13 +234,26 @@ static long run_test_once(void *in, size_t size, TEEC_Operation *op,
 	get_current_time(&t0);
 	while (l--) {
 		/* Time a large number of invocations to reduce variance */
-		res = TEEC_InvokeCommand(&sess, TA_AES_PERF_CMD_ENCRYPT, op,
+		res = TEEC_InvokeCommand(&sess, TA_AES_PERF_CMD_PROCESS, op,
 					 &ret_origin);
 		check_res(res, "TEEC_InvokeCommand");
 	}
 	get_current_time(&t1);
 
 	return timspec_diff_ns(&t0, &t1);
+}
+
+static void prepare_key()
+{
+	TEEC_Result res;
+	uint32_t ret_origin;
+	TEEC_Operation op;
+
+	op.paramTypes = TEEC_PARAM_TYPES(TEEC_NONE, TEEC_NONE, TEEC_NONE,
+					 TEEC_NONE);
+	res = TEEC_InvokeCommand(&sess, TA_AES_PERF_CMD_PREPARE_KEY, &op,
+				 &ret_origin);
+	check_res(res, "TEEC_InvokeCommand");
 }
 
 /* Encryption test: buffer of tsize byte. Run test n times. */
@@ -264,7 +277,7 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 	op.params[1].memref.offset = 0;
 	op.params[1].memref.size = out_shm.size;
 
-	printf("Starting test: size = %zu bytes, # loops = %u\n", size, n);
+	printf("Starting test: size=%zu bytes, loops=%u\n", size, n);
 	while (n-- > 0) {
 		t = run_test_once(in_shm.buffer, size, &op, l);
 		update_stats(&stats, t);
@@ -274,7 +287,7 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 	verbose("\n");
 
 	free_shm();
-	printf("Done. n=%d: min=%g us max=%g us mean=%g us stddev=%g us\n",
+	printf("Done.\nn=%d: min=%gμs max=%gμs mean=%gμs stddev=%gμs\n",
 	       stats.n, stats.min/1000, stats.max/1000, stats.m/1000,
 	       stddev(&stats)/1000);
 }
@@ -318,6 +331,8 @@ int main(int argc, char *argv[])
 	       ts.tv_nsec);
 
 	open_ta();
+
+	prepare_key();
 
 	run_test(size, n, l);
 

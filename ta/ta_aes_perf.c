@@ -25,9 +25,22 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <tee_internal_api.h>
 #include <tee_ta_api.h>
+#include <string.h>
+#include <trace.h>
+
 #include "ta_aes_perf.h"
 #include "ta_aes_perf_priv.h"
+
+#define CHECK(res, name, action) do {			\
+		if ((res) != TEE_SUCCESS) {		\
+			DMSG(name ": 0x%08x", (res));	\
+			action				\
+		}					\
+	} while(0)
+
+static TEE_OperationHandle crypto_op = NULL;
 
 /*
  * Trusted Application Entry Points
@@ -59,6 +72,9 @@ TEE_Result TA_OpenSessionEntryPoint(uint32_t nParamTypes,
 void TA_CloseSessionEntryPoint(void *pSessionContext)
 {
 	(void)pSessionContext;
+
+	if (crypto_op)
+		TEE_FreeOperation(crypto_op);
 }
 
 /* Called when a command is invoked */
@@ -69,30 +85,84 @@ TEE_Result TA_InvokeCommandEntryPoint(void *pSessionContext,
 	(void)pSessionContext;
 
 	switch (nCommandID) {
-	case TA_AES_PERF_CMD_ENCRYPT:
-		return cmd_encrypt(nParamTypes, pParams);
+	case TA_AES_PERF_CMD_PREPARE_KEY:
+		return cmd_prepare_key(nParamTypes, pParams);
 
-	case TA_AES_PERF_CMD_DECRYPT:
-		return cmd_decrypt(nParamTypes, pParams);
+	case TA_AES_PERF_CMD_PROCESS:
+		return cmd_process(nParamTypes, pParams);
 
 	default:
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 }
 
-TEE_Result cmd_encrypt(uint32_t param_types, TEE_Param params[4])
+TEE_Result cmd_process(uint32_t param_types, TEE_Param params[4])
 {
-	(void)param_types;
-	(void)params;
+	TEE_Result res;
+	void *in, *out;
+	uint32_t insz;
+	uint32_t *outsz;
+	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+						   TEE_PARAM_TYPE_MEMREF_OUTPUT,
+						   TEE_PARAM_TYPE_NONE,
+						   TEE_PARAM_TYPE_NONE);
+
+	if (param_types != exp_param_types)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	in = params[0].memref.buffer;
+	insz = params[0].memref.size;
+	out = params[1].memref.buffer;
+	outsz = &params[1].memref.size;
+
+	TEE_CipherInit(crypto_op, NULL, 0);
+
+	res = TEE_CipherDoFinal(crypto_op, in, insz, out, outsz);
+	CHECK(res, "TEE_CipherDoFinal", return res;);
 
 	return TEE_SUCCESS;
 }
 
-TEE_Result cmd_decrypt(uint32_t param_types, TEE_Param params[4])
+TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 {
-	(void)param_types;
+	TEE_Result res;
+	TEE_ObjectHandle hkey;
+	TEE_Attribute attr;
+	static uint8_t aes_key[] = { 0x00, 0x01, 0x02, 0x03,
+				     0x04, 0x05, 0x06, 0x07,
+				     0x08, 0x09, 0x0A, 0x0B,
+				     0x0C, 0x0D, 0x0E, 0x0F };
+
+	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_NONE,
+						   TEE_PARAM_TYPE_NONE,
+						   TEE_PARAM_TYPE_NONE,
+						   TEE_PARAM_TYPE_NONE);
+
 	(void)params;
+	if (param_types != exp_param_types)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	if (crypto_op)
+		TEE_FreeOperation(crypto_op);
+
+	res = TEE_AllocateOperation(&crypto_op, TEE_ALG_AES_ECB_NOPAD,
+				    TEE_MODE_ENCRYPT, 128);
+	CHECK(res, "TEE_AllocateOperation", return res;);
+
+	res = TEE_AllocateTransientObject(TEE_TYPE_AES, 128, &hkey);
+	CHECK(res, "TEE_AllocateTransientObject", return res;);
+
+	attr.attributeID = TEE_ATTR_SECRET_VALUE;
+	attr.content.ref.buffer = aes_key;
+	attr.content.ref.length = sizeof(aes_key);
+
+	res = TEE_PopulateTransientObject(hkey, &attr, 1);
+	CHECK(res, "TEE_PopulateTransientObject", return res;);
+
+	res = TEE_SetOperationKey(crypto_op, hkey);
+	CHECK(res, "TEE_SetOperationKey", return res;);
+
+	TEE_FreeTransientObject(hkey);
 
 	return TEE_SUCCESS;
 }
-
