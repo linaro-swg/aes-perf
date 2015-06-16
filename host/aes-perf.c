@@ -43,7 +43,7 @@
 #define DEF_S 1024
 
 /* Default number of measurements */
-#define DEF_N 10000
+#define DEF_N 100000
 
 /* Default size of inner loop */
 #define DEF_L 1
@@ -69,6 +69,9 @@ static TEEC_Context ctx;
 static TEEC_Session sess;
 static TEEC_SharedMemory in_shm = {
 	.flags = TEEC_MEM_INPUT
+};
+static TEEC_SharedMemory out_shm = {
+	.flags = TEEC_MEM_OUTPUT
 };
 
 static void errx(const char *msg, TEEC_Result res)
@@ -154,7 +157,7 @@ static void usage(const char *progname)
 	fprintf(stderr, "  -v    Be verbose (use twice for greater effect)\n");
 }
 
-static void *alloc_inbuf(size_t sz)
+static void alloc_shm(size_t sz)
 {
 	TEEC_Result res;
 
@@ -163,12 +166,16 @@ static void *alloc_inbuf(size_t sz)
 	res = TEEC_AllocateSharedMemory(&ctx, &in_shm);
 	check_res(res, "TEEC_AllocateSharedMemory");
 
-	return in_shm.buffer;
+	out_shm.buffer = NULL;
+	out_shm.size = sz;
+	res = TEEC_AllocateSharedMemory(&ctx, &out_shm);
+	check_res(res, "TEEC_AllocateSharedMemory");
 }
 
-static void free_inbuf()
+static void free_shm()
 {
 	TEEC_ReleaseSharedMemory(&in_shm);
+	TEEC_ReleaseSharedMemory(&out_shm);
 }
 
 static ssize_t read_random(void *in, size_t rsize)
@@ -244,14 +251,18 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 	TEEC_Result res;
 	TEEC_Operation op;
 
-	alloc_inbuf(size);
+	alloc_shm(size);
 
 	memset(&op, 0, sizeof(op));
-	op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_PARTIAL_INPUT, TEEC_NONE,
+	op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_PARTIAL_INPUT,
+					 TEEC_MEMREF_PARTIAL_OUTPUT,
 					 TEEC_NONE, TEEC_NONE);
 	op.params[0].memref.parent = &in_shm;
 	op.params[0].memref.offset = 0;
 	op.params[0].memref.size = in_shm.size;
+	op.params[1].memref.parent = &out_shm;
+	op.params[1].memref.offset = 0;
+	op.params[1].memref.size = out_shm.size;
 
 	printf("Starting test: size = %zu bytes, # loops = %u\n", size, n);
 	while (n-- > 0) {
@@ -262,7 +273,7 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 	}
 	verbose("\n");
 
-	free_inbuf();
+	free_shm();
 	printf("Done. n=%d: min=%g us max=%g us mean=%g us stddev=%g us\n",
 	       stats.n, stats.min/1000, stats.max/1000, stats.m/1000,
 	       stddev(&stats)/1000);
