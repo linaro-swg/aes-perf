@@ -59,7 +59,7 @@ static unsigned int n = 100000;	/* Number of measurements (-n) */
 static unsigned int l = 1;	/* Inner loops (-l) */
 static int verbosity = 0;	/* Verbosity (-v) */
 static int decrypt = 0;		/* Encrypt by default, -d to decrypt */
-
+static int keysize = 128;	/* AES key size (-k) */
 
 /*
  * TEE client stuff
@@ -150,6 +150,8 @@ static void usage(const char *progname)
 	fprintf(stderr, "\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "  -h    Print this help and exit\n");
+	fprintf(stderr, "  -k    Key size in bits: 128, 192 or 256 [%u]\n",
+			keysize);
 	fprintf(stderr, "  -l    Inner loop iterations [%u]\n", l);
 	fprintf(stderr, "  -n    Outer loop iterations [%u]\n", n);
 	fprintf(stderr, "  -s    Buffer size (process size bytes at a time) ");
@@ -253,6 +255,7 @@ static void prepare_key()
 	op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_INPUT, TEEC_NONE,
 					 TEEC_NONE, TEEC_NONE);
 	op.params[0].value.a = decrypt;
+	op.params[0].value.b = keysize;
 	res = TEEC_InvokeCommand(&sess, TA_AES_PERF_CMD_PREPARE_KEY, &op,
 				 &ret_origin);
 	check_res(res, "TEEC_InvokeCommand");
@@ -279,8 +282,10 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 	op.params[1].memref.offset = 0;
 	op.params[1].memref.size = out_shm.size;
 
-	printf("Starting test: %scrypt, size=%zu bytes, loops=%u\n",
-	       (decrypt ? "De" : "En"), size, n);
+	printf("Starting test: %scrypt, keysize=%u bits, size=%zu bytes, ",
+	       (decrypt ? "De" : "En"), keysize, size);
+	printf("loops=%u\n", n);
+
 	while (n-- > 0) {
 		t = run_test_once(in_shm.buffer, size, &op, l);
 		update_stats(&stats, t);
@@ -310,6 +315,16 @@ int main(int argc, char *argv[])
 	for (i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "-d")) {
 			decrypt = 1;
+		} else if (!strcmp(argv[i], "-k")) {
+			i++;
+			keysize = atoi(argv[i]);
+			if (keysize != 128 && keysize != 192 &&
+				keysize != 256) {
+				fprintf(stderr, "%s: invalid key size\n",
+					argv[0]);
+				usage(argv[0]);
+				return 1;
+			}
 		} else if (!strcmp(argv[i], "-l")) {
 			i++;
 			l = atoi(argv[i]);

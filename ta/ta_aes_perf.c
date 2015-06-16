@@ -129,10 +129,15 @@ TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 	TEE_ObjectHandle hkey;
 	TEE_Attribute attr;
 	uint32_t mode;
+	uint32_t keysize;
 	static uint8_t aes_key[] = { 0x00, 0x01, 0x02, 0x03,
 				     0x04, 0x05, 0x06, 0x07,
 				     0x08, 0x09, 0x0A, 0x0B,
-				     0x0C, 0x0D, 0x0E, 0x0F };
+				     0x0C, 0x0D, 0x0E, 0x0F,
+				     0x10, 0x11, 0x12, 0x13,
+				     0x14, 0x15, 0x16, 0x17,
+				     0x18, 0x19, 0x1A, 0x1B,
+				     0x1C, 0x1D, 0x1E, 0x1F };
 
 	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT,
 						   TEE_PARAM_TYPE_NONE,
@@ -142,20 +147,21 @@ TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 		return TEE_ERROR_BAD_PARAMETERS;
 
 	mode = params[0].value.a ? TEE_MODE_DECRYPT : TEE_MODE_ENCRYPT;
+	keysize = params[0].value.b;
 
 	if (crypto_op)
 		TEE_FreeOperation(crypto_op);
 
 	res = TEE_AllocateOperation(&crypto_op, TEE_ALG_AES_ECB_NOPAD, mode,
-				    128);
+				    keysize);
 	CHECK(res, "TEE_AllocateOperation", return res;);
 
-	res = TEE_AllocateTransientObject(TEE_TYPE_AES, 128, &hkey);
+	res = TEE_AllocateTransientObject(TEE_TYPE_AES, keysize, &hkey);
 	CHECK(res, "TEE_AllocateTransientObject", return res;);
 
 	attr.attributeID = TEE_ATTR_SECRET_VALUE;
 	attr.content.ref.buffer = aes_key;
-	attr.content.ref.length = sizeof(aes_key);
+	attr.content.ref.length = keysize / 8;
 
 	res = TEE_PopulateTransientObject(hkey, &attr, 1);
 	CHECK(res, "TEE_PopulateTransientObject", return res;);
