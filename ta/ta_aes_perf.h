@@ -45,5 +45,6 @@
 #define TA_AES_ECB	0
 #define TA_AES_CBC	1
 #define TA_AES_CTR	2
+#define TA_AES_XTS	3
 
 #endif /* TA_AES_PERF_H */

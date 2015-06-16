@@ -134,8 +134,10 @@ TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 {
 	TEE_Result res;
 	TEE_ObjectHandle hkey;
+	TEE_ObjectHandle hkey2;
 	TEE_Attribute attr;
 	uint32_t mode;
+	uint32_t op_keysize;
 	uint32_t keysize;
 	uint32_t algo;
 	static uint8_t aes_key[] = { 0x00, 0x01, 0x02, 0x03,
@@ -146,6 +148,14 @@ TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 				     0x14, 0x15, 0x16, 0x17,
 				     0x18, 0x19, 0x1A, 0x1B,
 				     0x1C, 0x1D, 0x1E, 0x1F };
+	static uint8_t aes_key2[] = { 0x20, 0x21, 0x22, 0x23,
+				      0x24, 0x25, 0x26, 0x27,
+				      0x28, 0x29, 0x2A, 0x2B,
+				      0x2C, 0x2D, 0x2E, 0x2F,
+				      0x30, 0x31, 0x32, 0x33,
+				      0x34, 0x35, 0x36, 0x37,
+				      0x38, 0x39, 0x3A, 0x3B,
+				      0x3C, 0x3D, 0x3E, 0x3F };
 
 	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT,
 						   TEE_PARAM_TYPE_VALUE_INPUT,
@@ -156,6 +166,7 @@ TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 
 	mode = params[0].value.a ? TEE_MODE_DECRYPT : TEE_MODE_ENCRYPT;
 	keysize = params[0].value.b;
+	op_keysize = keysize;
 
 	switch (params[1].value.a) {
 	case TA_AES_ECB:
@@ -170,6 +181,11 @@ TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 		algo = TEE_ALG_AES_CTR;
 		use_iv = 1;
 		break;
+	case TA_AES_XTS:
+		algo = TEE_ALG_AES_XTS;
+		use_iv = 1;
+		op_keysize *= 2;
+		break;
 	default:
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
@@ -177,7 +193,7 @@ TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 	if (crypto_op)
 		TEE_FreeOperation(crypto_op);
 
-	res = TEE_AllocateOperation(&crypto_op, algo, mode, keysize);
+	res = TEE_AllocateOperation(&crypto_op, algo, mode, op_keysize);
 	CHECK(res, "TEE_AllocateOperation", return res;);
 
 	res = TEE_AllocateTransientObject(TEE_TYPE_AES, keysize, &hkey);
@@ -190,8 +206,22 @@ TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 	res = TEE_PopulateTransientObject(hkey, &attr, 1);
 	CHECK(res, "TEE_PopulateTransientObject", return res;);
 
-	res = TEE_SetOperationKey(crypto_op, hkey);
-	CHECK(res, "TEE_SetOperationKey", return res;);
+	if (algo == TEE_ALG_AES_XTS) {
+		res = TEE_AllocateTransientObject(TEE_TYPE_AES, keysize,
+						  &hkey2);
+		CHECK(res, "TEE_AllocateTransientObject", return res;);
+
+		attr.content.ref.buffer = aes_key2;
+
+		res = TEE_PopulateTransientObject(hkey2, &attr, 1);
+		CHECK(res, "TEE_PopulateTransientObject", return res;);
+
+		res = TEE_SetOperationKey2(crypto_op, hkey, hkey2);
+		CHECK(res, "TEE_SetOperationKey2", return res;);
+	} else {
+		res = TEE_SetOperationKey(crypto_op, hkey);
+		CHECK(res, "TEE_SetOperationKey", return res;);
+	}
 
 	TEE_FreeTransientObject(hkey);
 
