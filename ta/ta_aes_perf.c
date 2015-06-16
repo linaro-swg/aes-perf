@@ -40,6 +40,10 @@
 		}					\
 	} while(0)
 
+static uint8_t iv[] = { 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
+			0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF };
+static int use_iv;
+
 static TEE_OperationHandle crypto_op = NULL;
 
 /*
@@ -115,7 +119,10 @@ TEE_Result cmd_process(uint32_t param_types, TEE_Param params[4])
 	out = params[1].memref.buffer;
 	outsz = &params[1].memref.size;
 
-	TEE_CipherInit(crypto_op, NULL, 0);
+	if (use_iv)
+		TEE_CipherInit(crypto_op, iv, sizeof(iv));
+	else
+		TEE_CipherInit(crypto_op, NULL, 0);
 
 	res = TEE_CipherDoFinal(crypto_op, in, insz, out, outsz);
 	CHECK(res, "TEE_CipherDoFinal", return res;);
@@ -130,6 +137,7 @@ TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 	TEE_Attribute attr;
 	uint32_t mode;
 	uint32_t keysize;
+	uint32_t algo;
 	static uint8_t aes_key[] = { 0x00, 0x01, 0x02, 0x03,
 				     0x04, 0x05, 0x06, 0x07,
 				     0x08, 0x09, 0x0A, 0x0B,
@@ -140,7 +148,7 @@ TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 				     0x1C, 0x1D, 0x1E, 0x1F };
 
 	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT,
-						   TEE_PARAM_TYPE_NONE,
+						   TEE_PARAM_TYPE_VALUE_INPUT,
 						   TEE_PARAM_TYPE_NONE,
 						   TEE_PARAM_TYPE_NONE);
 	if (param_types != exp_param_types)
@@ -149,11 +157,23 @@ TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 	mode = params[0].value.a ? TEE_MODE_DECRYPT : TEE_MODE_ENCRYPT;
 	keysize = params[0].value.b;
 
+	switch (params[1].value.a) {
+	case TA_AES_ECB:
+		algo = TEE_ALG_AES_ECB_NOPAD;
+		use_iv = 0;
+		break;
+	case TA_AES_CBC:
+		algo = TEE_ALG_AES_CBC_NOPAD;
+		use_iv = 1;
+		break;
+	default:
+		return TEE_ERROR_BAD_PARAMETERS;
+	}
+
 	if (crypto_op)
 		TEE_FreeOperation(crypto_op);
 
-	res = TEE_AllocateOperation(&crypto_op, TEE_ALG_AES_ECB_NOPAD, mode,
-				    keysize);
+	res = TEE_AllocateOperation(&crypto_op, algo, mode, keysize);
 	CHECK(res, "TEE_AllocateOperation", return res;);
 
 	res = TEE_AllocateTransientObject(TEE_TYPE_AES, keysize, &hkey);

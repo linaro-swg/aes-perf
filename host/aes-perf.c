@@ -60,6 +60,7 @@ static unsigned int l = 1;	/* Inner loops (-l) */
 static int verbosity = 0;	/* Verbosity (-v) */
 static int decrypt = 0;		/* Encrypt by default, -d to decrypt */
 static int keysize = 128;	/* AES key size (-k) */
+static int mode = TA_AES_ECB;	/* AES mode (-m) */
 
 /*
  * TEE client stuff
@@ -142,6 +143,18 @@ static double stddev(struct statistics *s)
 	return sqrt(s->M2/s->n);
 }
 
+static const char *mode_str(uint32_t mode)
+{
+	switch (mode) {
+	case TA_AES_ECB:
+		return "ECB";
+	case TA_AES_CBC:
+		return "CBC";
+	default:
+		return "???";
+	}
+}
+
 static void usage(const char *progname)
 {
 	fprintf(stderr, "Usage:\n");
@@ -153,6 +166,7 @@ static void usage(const char *progname)
 	fprintf(stderr, "  -k    Key size in bits: 128, 192 or 256 [%u]\n",
 			keysize);
 	fprintf(stderr, "  -l    Inner loop iterations [%u]\n", l);
+	fprintf(stderr, "  -m    AES mode: ECB, CBC [%s]\n", mode_str(mode));
 	fprintf(stderr, "  -n    Outer loop iterations [%u]\n", n);
 	fprintf(stderr, "  -s    Buffer size (process size bytes at a time) ");
 	fprintf(stderr, "[%u]\n", size);
@@ -252,10 +266,11 @@ static void prepare_key()
 	TEEC_Operation op;
 
 	memset(&op, 0, sizeof(op));
-	op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_INPUT, TEEC_NONE,
+	op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_INPUT, TEEC_VALUE_INPUT,
 					 TEEC_NONE, TEEC_NONE);
 	op.params[0].value.a = decrypt;
 	op.params[0].value.b = keysize;
+	op.params[1].value.a = mode;
 	res = TEEC_InvokeCommand(&sess, TA_AES_PERF_CMD_PREPARE_KEY, &op,
 				 &ret_origin);
 	check_res(res, "TEEC_InvokeCommand");
@@ -282,8 +297,8 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 	op.params[1].memref.offset = 0;
 	op.params[1].memref.size = out_shm.size;
 
-	printf("Starting test: %scrypt, keysize=%u bits, size=%zu bytes, ",
-	       (decrypt ? "De" : "En"), keysize, size);
+	printf("Starting test: %s, %scrypt, keysize=%u bits, size=%zu bytes, ",
+	       mode_str(mode), (decrypt ? "de" : "en"), keysize, size);
 	printf("loops=%u\n", n);
 
 	while (n-- > 0) {
@@ -328,6 +343,18 @@ int main(int argc, char *argv[])
 		} else if (!strcmp(argv[i], "-l")) {
 			i++;
 			l = atoi(argv[i]);
+		} else if (!strcmp(argv[i], "-m")) {
+			i++;
+			if (!strcasecmp(argv[i], "ECB"))
+				mode = TA_AES_ECB;
+			else if (!strcasecmp(argv[i], "CBC"))
+				mode = TA_AES_CBC;
+			else {
+				fprintf(stderr, "%s, invalid mode\n",
+					argv[0]);
+				usage(argv[0]);
+				return 1;
+			}
 		} else if (!strcmp(argv[i], "-n")) {
 			i++;
 			n = atoi(argv[i]);

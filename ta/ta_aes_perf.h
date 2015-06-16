@@ -31,7 +31,18 @@
 #define TA_AES_PERF_UUID { 0xe626662e, 0xc0e2, 0x485c, \
 	{ 0xb8, 0xc8, 0x09, 0xfb, 0xce, 0x6e, 0xdf, 0x3d } }
 
+/*
+ * Commands implemented by the TA
+ */
+
 #define TA_AES_PERF_CMD_PREPARE_KEY	0
 #define TA_AES_PERF_CMD_PROCESS		1
+
+/*
+ * Supported AES modes of operation
+ */
+
+#define TA_AES_ECB	0
+#define TA_AES_CBC	1
 
 #endif /* TA_AES_PERF_H */
