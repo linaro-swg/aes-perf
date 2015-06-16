@@ -42,7 +42,11 @@
 /* Default buffer size (-s) */
 #define DEF_S 1024
 
-#define DEF_N 20000
+/* Default number of measurements */
+#define DEF_N 10000
+
+/* Default size of inner loop */
+#define DEF_L 1
 
 static int verbosity = 0;
 
@@ -143,7 +147,8 @@ static void usage(const char *progname)
 	fprintf(stderr, "\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "  -h    Print this help and exit\n");
-	fprintf(stderr, "  -n    Number of loops [%u]\n", DEF_N);
+	fprintf(stderr, "  -l    Inner loop iterations [%u]\n", DEF_L);
+	fprintf(stderr, "  -n    Outer loop iterations [%u]\n", DEF_N);
 	fprintf(stderr, "  -s    Buffer size (process size bytes at a time) ");
 	fprintf(stderr, "[%u]\n", DEF_S);
 	fprintf(stderr, "  -v    Be verbose (use twice for greater effect)\n");
@@ -197,7 +202,7 @@ static long get_current_time(struct timespec *ts)
 	}
 }
 
-static long timspec_diff(struct timespec *start, struct timespec *end)
+static long timspec_diff_ns(struct timespec *start, struct timespec *end)
 {
 	long ns = 0;
 
@@ -211,7 +216,8 @@ static long timspec_diff(struct timespec *start, struct timespec *end)
 	return ns;
 }
 
-static long run_test_once(void *in, size_t size, TEEC_Operation *op)
+static long run_test_once(void *in, size_t size, TEEC_Operation *op,
+			  unsigned int l)
 {
 	struct timespec t0, t1;
 	TEEC_Result res;
@@ -219,16 +225,19 @@ static long run_test_once(void *in, size_t size, TEEC_Operation *op)
 
 	read_random(in, size);
 	get_current_time(&t0);
-	res = TEEC_InvokeCommand(&sess, TA_AES_PERF_CMD_ENCRYPT, op,
-				 &ret_origin);
-	check_res(res, "TEEC_InvokeCommand");
+	while (l--) {
+		/* Time a large number of invocations to reduce variance */
+		res = TEEC_InvokeCommand(&sess, TA_AES_PERF_CMD_ENCRYPT, op,
+					 &ret_origin);
+		check_res(res, "TEEC_InvokeCommand");
+	}
 	get_current_time(&t1);
 
-	return timspec_diff(&t0, &t1);
+	return timspec_diff_ns(&t0, &t1);
 }
 
 /* Encryption test: buffer of tsize byte. Run test n times. */
-static void run_test(size_t size, unsigned int n)
+static void run_test(size_t size, unsigned int n, unsigned int l)
 {
 	long t;
 	struct statistics stats = {0, };
@@ -246,16 +255,17 @@ static void run_test(size_t size, unsigned int n)
 
 	printf("Starting test: size = %zu bytes, # loops = %u\n", size, n);
 	while (n-- > 0) {
-		t = run_test_once(in_shm.buffer, size, &op);
+		t = run_test_once(in_shm.buffer, size, &op, l);
 		update_stats(&stats, t);
-		if (n % 1000 == 0)
+		if (n % 10 == 0)
 			verbose("#");
 	}
 	verbose("\n");
 
 	free_inbuf();
-	printf("Done. n=%d: min=%g max=%g mean=%g stddev=%g\n",
-	       stats.n, stats.min, stats.max, stats.m, stddev(&stats));
+	printf("Done. n=%d: min=%g us max=%g us mean=%g us stddev=%g us\n",
+	       stats.n, stats.min/1000, stats.max/1000, stats.m/1000,
+	       stddev(&stats)/1000);
 }
 
 int main(int argc, char *argv[])
@@ -264,20 +274,24 @@ int main(int argc, char *argv[])
 	struct timespec ts;
 	size_t size = DEF_S;	/* Process rsize bytes at a time */
 	unsigned int n = DEF_N;	/* Run test n times */
+	unsigned int l = DEF_L;	/* Inner loop */
 
 	/* Parse command line */
 	for (i = 1; i < argc; i++) {
-		if (!strcmp(argv[i], "-v")) {
-			verbosity++;
-		} else if (!strcmp(argv[i], "-h")) {
+		if (!strcmp(argv[i], "-h")) {
 			usage(argv[0]);
 			return 0;
-		} else if (!strcmp(argv[i], "-s")) {
+		} else if (!strcmp(argv[i], "-l")) {
 			i++;
-			size = atoi(argv[i]);
+			l = atoi(argv[i]);
 		} else if (!strcmp(argv[i], "-n")) {
 			i++;
 			n = atoi(argv[i]);
+		} else if (!strcmp(argv[i], "-s")) {
+			i++;
+			size = atoi(argv[i]);
+		} else if (!strcmp(argv[i], "-v")) {
+			verbosity++;
 		} else {
 			fprintf(stderr, "%s: invalid argument\n", argv[0]);
 			usage(argv[0]);
@@ -294,7 +308,7 @@ int main(int argc, char *argv[])
 
 	open_ta();
 
-	run_test(size, n);
+	run_test(size, n, l);
 
 	return 0;
 }
