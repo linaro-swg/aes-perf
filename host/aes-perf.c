@@ -39,17 +39,6 @@
 #include <tee_client_api.h>
 #include "ta_aes_perf.h"
 
-/* Default buffer size (-s) */
-#define DEF_S 1024
-
-/* Default number of measurements */
-#define DEF_N 100000
-
-/* Default size of inner loop */
-#define DEF_L 1
-
-static int verbosity = 0;
-
 #define _verbose(lvl, ...)			\
 	do {					\
 		if (verbosity >= lvl) {		\
@@ -60,6 +49,17 @@ static int verbosity = 0;
 
 #define verbose(...)  _verbose(1, __VA_ARGS__)
 #define vverbose(...) _verbose(2, __VA_ARGS__)
+
+/*
+ * Command line parameters
+ */
+
+static size_t size = 1024;	/* Buffer size (-s) */
+static unsigned int n = 100000;	/* Number of measurements (-n) */
+static unsigned int l = 1;	/* Inner loops (-l) */
+static int verbosity = 0;	/* Verbosity (-v) */
+static int decrypt = 0;		/* Encrypt by default, -d to decrypt */
+
 
 /*
  * TEE client stuff
@@ -150,10 +150,10 @@ static void usage(const char *progname)
 	fprintf(stderr, "\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "  -h    Print this help and exit\n");
-	fprintf(stderr, "  -l    Inner loop iterations [%u]\n", DEF_L);
-	fprintf(stderr, "  -n    Outer loop iterations [%u]\n", DEF_N);
+	fprintf(stderr, "  -l    Inner loop iterations [%u]\n", l);
+	fprintf(stderr, "  -n    Outer loop iterations [%u]\n", n);
 	fprintf(stderr, "  -s    Buffer size (process size bytes at a time) ");
-	fprintf(stderr, "[%u]\n", DEF_S);
+	fprintf(stderr, "[%u]\n", size);
 	fprintf(stderr, "  -v    Be verbose (use twice for greater effect)\n");
 }
 
@@ -249,8 +249,10 @@ static void prepare_key()
 	uint32_t ret_origin;
 	TEEC_Operation op;
 
-	op.paramTypes = TEEC_PARAM_TYPES(TEEC_NONE, TEEC_NONE, TEEC_NONE,
-					 TEEC_NONE);
+	memset(&op, 0, sizeof(op));
+	op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_INPUT, TEEC_NONE,
+					 TEEC_NONE, TEEC_NONE);
+	op.params[0].value.a = decrypt;
 	res = TEEC_InvokeCommand(&sess, TA_AES_PERF_CMD_PREPARE_KEY, &op,
 				 &ret_origin);
 	check_res(res, "TEEC_InvokeCommand");
@@ -277,7 +279,8 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 	op.params[1].memref.offset = 0;
 	op.params[1].memref.size = out_shm.size;
 
-	printf("Starting test: size=%zu bytes, loops=%u\n", size, n);
+	printf("Starting test: %scrypt, size=%zu bytes, loops=%u\n",
+	       (decrypt ? "De" : "En"), size, n);
 	while (n-- > 0) {
 		t = run_test_once(in_shm.buffer, size, &op, l);
 		update_stats(&stats, t);
@@ -287,8 +290,8 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 	verbose("\n");
 
 	free_shm();
-	printf("Done.\nn=%d: min=%gμs max=%gμs mean=%gμs stddev=%gμs\n",
-	       stats.n, stats.min/1000, stats.max/1000, stats.m/1000,
+	printf("Done. min=%gμs max=%gμs mean=%gμs stddev=%gμs\n",
+	       stats.min/1000, stats.max/1000, stats.m/1000,
 	       stddev(&stats)/1000);
 }
 
@@ -296,15 +299,17 @@ int main(int argc, char *argv[])
 {
 	int i;
 	struct timespec ts;
-	size_t size = DEF_S;	/* Process rsize bytes at a time */
-	unsigned int n = DEF_N;	/* Run test n times */
-	unsigned int l = DEF_L;	/* Inner loop */
 
 	/* Parse command line */
 	for (i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "-h")) {
 			usage(argv[0]);
 			return 0;
+		}
+	}
+	for (i = 1; i < argc; i++) {
+		if (!strcmp(argv[i], "-d")) {
+			decrypt = 1;
 		} else if (!strcmp(argv[i], "-l")) {
 			i++;
 			l = atoi(argv[i]);
