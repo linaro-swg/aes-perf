@@ -106,7 +106,7 @@ TEE_Result cmd_process(uint32_t param_types, TEE_Param params[4])
 	int n;
 	void *in, *out;
 	uint32_t insz;
-	uint32_t *outsz;
+	uint32_t outsz;
 	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
 						   TEE_PARAM_TYPE_MEMREF_OUTPUT,
 						   TEE_PARAM_TYPE_VALUE_INPUT,
@@ -118,11 +118,11 @@ TEE_Result cmd_process(uint32_t param_types, TEE_Param params[4])
 	in = params[0].memref.buffer;
 	insz = params[0].memref.size;
 	out = params[1].memref.buffer;
-	outsz = &params[1].memref.size;
+	outsz = params[1].memref.size;
 	n = params[2].value.a;
 
 	while (n--) {
-		res = TEE_CipherUpdate(crypto_op, in, insz, out, outsz);
+		res = TEE_CipherUpdate(crypto_op, in, insz, out, &outsz);
 		CHECK(res, "TEE_CipherUpdate", return res;);
 	}
 	return TEE_SUCCESS;
@@ -216,6 +216,8 @@ TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 
 		res = TEE_SetOperationKey2(crypto_op, hkey, hkey2);
 		CHECK(res, "TEE_SetOperationKey2", return res;);
+
+		TEE_FreeTransientObject(hkey2);
 	} else {
 		res = TEE_SetOperationKey(crypto_op, hkey);
 		CHECK(res, "TEE_SetOperationKey", return res;);
