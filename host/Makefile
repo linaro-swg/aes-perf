@@ -5,16 +5,20 @@ ifeq ($O,)
 $(error output path should be specified when calling this makefile)
 endif
 
+VERSION = $(shell git describe --always --dirty=-dev 2>/dev/null || echo Unknown)
+
 CC = $(CROSS_COMPILE_HOST)gcc
 
 srcs := aes-perf.c
 
 objs := $(patsubst %.c,$(O)/%.o, $(srcs))
 
+CFLAGS += -Os
 # For NAN
 CFLAGS += -D_ISOC99_SOURCE=1
 # For clock_gettime() etc.
 CFLAGS += -D_POSIX_C_SOURCE=199309L
+CFLAGS += -DVERSION="$(VERSION)"
 CFLAGS += -I. -I../ta -I$(OPTEE_CLIENT_PATH)/out/export/include
 
 LDFLAGS += -L$(OPTEE_CLIENT_PATH)/out/export/lib -lteec -lm

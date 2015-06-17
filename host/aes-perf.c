@@ -117,7 +117,7 @@ struct statistics {
 };
 
 /* Take new sample into account (Knuth/Welford algorithm) */
-static void update_stats(struct statistics *s, long t)
+static void update_stats(struct statistics *s, uint64_t t)
 {
 	double x = (double)t;
 	double delta = x - s->m;
@@ -159,22 +159,29 @@ static const char *mode_str(uint32_t mode)
 	}
 }
 
+#define _TO_STR(x) #x
+#define TO_STR(x) _TO_STR(x)
+
 static void usage(const char *progname)
 {
+	fprintf(stderr, "AES performance testing tool for OP-TEE (%s)\n\n",
+		TO_STR(VERSION));
 	fprintf(stderr, "Usage:\n");
 	fprintf(stderr, "  %s -h\n", progname);
-	fprintf(stderr, "  %s [-v] [-n loops] [-s size]\n", progname);
+	fprintf(stderr, "  %s [-v] [-m mode] [-k keysize] ", progname);
+	fprintf(stderr, "[-s bufsize] [-n loops] [-l iloops] \n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "  -h    Print this help and exit\n");
 	fprintf(stderr, "  -k    Key size in bits: 128, 192 or 256 [%u]\n",
 			keysize);
-	fprintf(stderr, "  -l    Inner loop iterations [%u]\n", l);
+	fprintf(stderr, "  -l    Inner loop iterations (TA calls ");
+	fprintf(stderr, "TEE_CipherUpdate() <x> times) [%u]\n", l);
 	fprintf(stderr, "  -m    AES mode: ECB, CBC, CTR, XTS [%s]\n",
 			mode_str(mode));
 	fprintf(stderr, "  -n    Outer loop iterations [%u]\n", n);
-	fprintf(stderr, "  -s    Buffer size (process size bytes at a time) ");
-	fprintf(stderr, "[%u]\n", size);
+	fprintf(stderr, "  -s    Buffer size (process <x> bytes at a time) ");
+	fprintf(stderr, "[%zu]\n", size);
 	fprintf(stderr, "  -v    Be verbose (use twice for greater effect)\n");
 }
 
@@ -230,9 +237,9 @@ static long get_current_time(struct timespec *ts)
 	}
 }
 
-static long timspec_diff_ns(struct timespec *start, struct timespec *end)
+static uint64_t timespec_diff_ns(struct timespec *start, struct timespec *end)
 {
-	long ns = 0;
+	uint64_t ns = 0;
 
 	if (end->tv_nsec < start->tv_nsec) {
 		ns += 1000000000 * (end->tv_sec - start->tv_sec - 1);
@@ -244,7 +251,7 @@ static long timspec_diff_ns(struct timespec *start, struct timespec *end)
 	return ns;
 }
 
-static long run_test_once(void *in, size_t size, TEEC_Operation *op,
+static uint64_t run_test_once(void *in, size_t size, TEEC_Operation *op,
 			  unsigned int l)
 {
 	struct timespec t0, t1;
@@ -253,15 +260,12 @@ static long run_test_once(void *in, size_t size, TEEC_Operation *op,
 
 	read_random(in, size);
 	get_current_time(&t0);
-	while (l--) {
-		/* Time a large number of invocations to reduce variance */
-		res = TEEC_InvokeCommand(&sess, TA_AES_PERF_CMD_PROCESS, op,
-					 &ret_origin);
-		check_res(res, "TEEC_InvokeCommand");
-	}
+	res = TEEC_InvokeCommand(&sess, TA_AES_PERF_CMD_PROCESS, op,
+				 &ret_origin);
+	check_res(res, "TEEC_InvokeCommand");
 	get_current_time(&t1);
 
-	return timspec_diff_ns(&t0, &t1);
+	return timespec_diff_ns(&t0, &t1);
 }
 
 static void prepare_key()
@@ -284,46 +288,47 @@ static void prepare_key()
 /* Encryption test: buffer of tsize byte. Run test n times. */
 static void run_test(size_t size, unsigned int n, unsigned int l)
 {
-	long t;
+	uint64_t t;
 	struct statistics stats = {0, };
-	TEEC_Result res;
 	TEEC_Operation op;
+	int n0 = n;
 
 	alloc_shm(size);
 
 	memset(&op, 0, sizeof(op));
 	op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_PARTIAL_INPUT,
 					 TEEC_MEMREF_PARTIAL_OUTPUT,
-					 TEEC_NONE, TEEC_NONE);
+					 TEEC_VALUE_INPUT, TEEC_NONE);
 	op.params[0].memref.parent = &in_shm;
 	op.params[0].memref.offset = 0;
 	op.params[0].memref.size = in_shm.size;
 	op.params[1].memref.parent = &out_shm;
 	op.params[1].memref.offset = 0;
 	op.params[1].memref.size = out_shm.size;
+	op.params[2].value.a = l;
 
-	printf("Starting test: %s, %scrypt, keysize=%u bits, size=%zu bytes, ",
-	       mode_str(mode), (decrypt ? "de" : "en"), keysize, size);
-	printf("loops=%u\n", n);
+	verbose("Starting test: %s, %scrypt, keysize=%u bits, size=%zu bytes, ",
+		mode_str(mode), (decrypt ? "de" : "en"), keysize, size);
+	verbose("inner loops=%u, loops=%u\n", l, n);
 
 	while (n-- > 0) {
 		t = run_test_once(in_shm.buffer, size, &op, l);
 		update_stats(&stats, t);
-		if (n % 10 == 0)
-			verbose("#");
+		if (n % (n0/10) == 0)
+			vverbose("#");
 	}
-	verbose("\n");
-
+	vverbose("\n");
+	printf("min=%gμs max=%gμs mean=%gμs stddev=%gμs\n", stats.min/1000,
+		stats.max/1000, stats.m/1000, stddev(&stats)/1000);
 	free_shm();
-	printf("Done. min=%gμs max=%gμs mean=%gμs stddev=%gμs\n",
-	       stats.min/1000, stats.max/1000, stats.m/1000,
-	       stddev(&stats)/1000);
 }
 
 int main(int argc, char *argv[])
 {
 	int i;
 	struct timespec ts;
+	struct timespec t0, t1;
+	double elapsed;
 
 	/* Parse command line */
 	for (i = 1; i < argc; i++) {
@@ -379,18 +384,24 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	vverbose("aes-perf version %s\n", TO_STR(VERSION));
 	if (clock_getres(CLOCK_MONOTONIC, &ts) < 0) {
 		perror("clock_getres");
 		return 1;
 	}
-	printf("Note: clock resolution is %lu ns.\n", ts.tv_sec*1000000000 +
-	       ts.tv_nsec);
+	vverbose("Clock resolution is %lu ns\n", ts.tv_sec*1000000000 +
+		ts.tv_nsec);
 
+	get_current_time(&t0);
 	open_ta();
-
 	prepare_key();
-
 	run_test(size, n, l);
+	get_current_time(&t1);
+
+	elapsed = timespec_diff_ns(&t0, &t1);
+	elapsed /= 1000000000;
+	printf("Processed %lu bytes in %g seconds ", size * n, elapsed);
+	printf("(%g MiB/s)\n", ((double)(size * n))/(1024 * 1024 * elapsed));
 
 	return 0;
 }

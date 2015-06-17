@@ -103,12 +103,13 @@ TEE_Result TA_InvokeCommandEntryPoint(void *pSessionContext,
 TEE_Result cmd_process(uint32_t param_types, TEE_Param params[4])
 {
 	TEE_Result res;
+	int n;
 	void *in, *out;
 	uint32_t insz;
 	uint32_t *outsz;
 	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
 						   TEE_PARAM_TYPE_MEMREF_OUTPUT,
-						   TEE_PARAM_TYPE_NONE,
+						   TEE_PARAM_TYPE_VALUE_INPUT,
 						   TEE_PARAM_TYPE_NONE);
 
 	if (param_types != exp_param_types)
@@ -118,10 +119,12 @@ TEE_Result cmd_process(uint32_t param_types, TEE_Param params[4])
 	insz = params[0].memref.size;
 	out = params[1].memref.buffer;
 	outsz = &params[1].memref.size;
+	n = params[2].value.a;
 
-	res = TEE_CipherUpdate(crypto_op, in, insz, out, outsz);
-	CHECK(res, "TEE_CipherUpdate", return res;);
-
+	while (n--) {
+		res = TEE_CipherUpdate(crypto_op, in, insz, out, outsz);
+		CHECK(res, "TEE_CipherUpdate", return res;);
+	}
 	return TEE_SUCCESS;
 }
 

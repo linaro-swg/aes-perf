@@ -48,7 +48,7 @@ clean: clean-aes-perf clean-ta
 clean-aes-perf:
 	$(q)$(MAKE) -C host O=$(out-dir)/aes-perf q=$(q) clean
 
-.PHONY: clean-ra
+.PHONY: clean-ta
 clean-ta:
 	$(q)$(MAKE) -C ta O=$(out-dir)/ta q=$(q) clean
 
