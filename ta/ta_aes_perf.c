@@ -119,13 +119,8 @@ TEE_Result cmd_process(uint32_t param_types, TEE_Param params[4])
 	out = params[1].memref.buffer;
 	outsz = &params[1].memref.size;
 
-	if (use_iv)
-		TEE_CipherInit(crypto_op, iv, sizeof(iv));
-	else
-		TEE_CipherInit(crypto_op, NULL, 0);
-
-	res = TEE_CipherDoFinal(crypto_op, in, insz, out, outsz);
-	CHECK(res, "TEE_CipherDoFinal", return res;);
+	res = TEE_CipherUpdate(crypto_op, in, insz, out, outsz);
+	CHECK(res, "TEE_CipherUpdate", return res;);
 
 	return TEE_SUCCESS;
 }
@@ -224,6 +219,11 @@ TEE_Result cmd_prepare_key(uint32_t param_types, TEE_Param params[4])
 	}
 
 	TEE_FreeTransientObject(hkey);
+
+	if (use_iv)
+		TEE_CipherInit(crypto_op, iv, sizeof(iv));
+	else
+		TEE_CipherInit(crypto_op, NULL, 0);
 
 	return TEE_SUCCESS;
 }
