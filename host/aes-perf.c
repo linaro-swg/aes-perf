@@ -61,6 +61,7 @@ static int verbosity = 0;	/* Verbosity (-v) */
 static int decrypt = 0;		/* Encrypt by default, -d to decrypt */
 static int keysize = 128;	/* AES key size (-k) */
 static int mode = TA_AES_ECB;	/* AES mode (-m) */
+static int random_in = 0;	/* Get input data from /dev/urandom (-r) */
 
 /*
  * TEE client stuff
@@ -169,7 +170,7 @@ static void usage(const char *progname)
 	fprintf(stderr, "Usage:\n");
 	fprintf(stderr, "  %s -h\n", progname);
 	fprintf(stderr, "  %s [-v] [-m mode] [-k keysize] ", progname);
-	fprintf(stderr, "[-s bufsize] [-n loops] [-l iloops] \n");
+	fprintf(stderr, "[-s bufsize] [-r] [-n loops] [-l iloops] \n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "  -h    Print this help and exit\n");
@@ -180,6 +181,8 @@ static void usage(const char *progname)
 	fprintf(stderr, "  -m    AES mode: ECB, CBC, CTR, XTS [%s]\n",
 			mode_str(mode));
 	fprintf(stderr, "  -n    Outer loop iterations [%u]\n", n);
+	fprintf(stderr, "  -r    Get input data from /dev/urandom ");
+	fprintf(stderr, "(otherwise use zero-filled buffer)\n");
 	fprintf(stderr, "  -s    Buffer size (process <x> bytes at a time) ");
 	fprintf(stderr, "[%zu]\n", size);
 	fprintf(stderr, "  -v    Be verbose (use twice for greater effect)\n");
@@ -258,7 +261,8 @@ static uint64_t run_test_once(void *in, size_t size, TEEC_Operation *op,
 	TEEC_Result res;
 	uint32_t ret_origin;
 
-	read_random(in, size);
+	if (random_in)
+		read_random(in, size);
 	get_current_time(&t0);
 	res = TEEC_InvokeCommand(&sess, TA_AES_PERF_CMD_PROCESS, op,
 				 &ret_origin);
@@ -295,6 +299,9 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 
 	alloc_shm(size);
 
+	if (!random_in)
+		memset(in_shm.buffer, 0, size);
+
 	memset(&op, 0, sizeof(op));
 	op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_PARTIAL_INPUT,
 					 TEEC_MEMREF_PARTIAL_OUTPUT,
@@ -309,6 +316,7 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 
 	verbose("Starting test: %s, %scrypt, keysize=%u bits, size=%zu bytes, ",
 		mode_str(mode), (decrypt ? "de" : "en"), keysize, size);
+	verbose("random=%s, ", random_in ? "yes" : "no");
 	verbose("inner loops=%u, loops=%u\n", l, n);
 
 	while (n-- > 0) {
@@ -372,6 +380,8 @@ int main(int argc, char *argv[])
 		} else if (!strcmp(argv[i], "-n")) {
 			i++;
 			n = atoi(argv[i]);
+		} else if (!strcmp(argv[i], "-r")) {
+			random_in = 1;
 		} else if (!strcmp(argv[i], "-s")) {
 			i++;
 			size = atoi(argv[i]);
