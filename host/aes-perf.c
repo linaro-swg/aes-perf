@@ -63,6 +63,7 @@ static int keysize = 128;	/* AES key size (-k) */
 static int mode = TA_AES_ECB;	/* AES mode (-m) */
 static int random_in = 0;	/* Get input data from /dev/urandom (-r) */
 static int in_place = 0;	/* 1: use same buffer for in and out (-i) */
+static int warmup = 1;		/* Start with 1 second busy loop (-w) */
 
 /*
  * TEE client stuff
@@ -176,7 +177,7 @@ static void usage(const char *progname)
 	fprintf(stderr, "  %s -h\n", progname);
 	fprintf(stderr, "  %s [-v] [-m mode] [-k keysize] ", progname);
 	fprintf(stderr, "[-s bufsize] [-r] [-i] [-n loops] [-l iloops] \n");
-	fprintf(stderr, "\n");
+	fprintf(stderr, "[-w warmup_time]\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "  -h    Print this help and exit\n");
 	fprintf(stderr, "  -i    Use same buffer for input and output (in ");
@@ -193,6 +194,10 @@ static void usage(const char *progname)
 	fprintf(stderr, "  -s    Buffer size (process <x> bytes at a time) ");
 	fprintf(stderr, "[%zu]\n", size);
 	fprintf(stderr, "  -v    Be verbose (use twice for greater effect)\n");
+	fprintf(stderr, "  -w    Warmup time in seconds: execute a busy ");
+	fprintf(stderr, "loop before the test\n");
+	fprintf(stderr, "        to mitigate the effects of cpufreq etc. ");
+	fprintf(stderr, "[%u]\n", warmup);
 }
 
 static void alloc_shm(size_t sz)
@@ -298,6 +303,19 @@ static void prepare_key()
 	check_res(res, "TEEC_InvokeCommand");
 }
 
+static void do_warmup()
+{
+	struct timespec t0, t;
+	int i;
+
+	get_current_time(&t0);
+	do {
+		for (i = 0; i < 100000; i++)
+			;
+		get_current_time(&t);
+	} while (timespec_diff_ns(&t0, &t) < warmup * 1000000000);
+}
+
 static const char *yesno(int v)
 {
 	return (v ? "yes" : "no");
@@ -334,6 +352,9 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 	verbose("random=%s, ", yesno(random_in));
 	verbose("in place=%s, ", yesno(in_place));
 	verbose("inner loops=%u, loops=%u\n", l, n);
+
+	if (warmup)
+		do_warmup();
 
 	while (n-- > 0) {
 		t = run_test_once(in_shm.buffer, size, &op, l);
@@ -414,6 +435,9 @@ int main(int argc, char *argv[])
 			size = atoi(argv[i]);
 		} else if (!strcmp(argv[i], "-v")) {
 			verbosity++;
+		} else if (!strcmp(argv[i], "-w")) {
+			NEXT_ARG(i);
+			warmup = atoi(argv[i]);
 		} else {
 			fprintf(stderr, "%s: invalid argument: %s\n",
 				argv[0], argv[i]);
