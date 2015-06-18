@@ -62,6 +62,7 @@ static int decrypt = 0;		/* Encrypt by default, -d to decrypt */
 static int keysize = 128;	/* AES key size (-k) */
 static int mode = TA_AES_ECB;	/* AES mode (-m) */
 static int random_in = 0;	/* Get input data from /dev/urandom (-r) */
+static int in_place = 0;	/* 1: use same buffer for in and out (-i) */
 
 /*
  * TEE client stuff
@@ -69,11 +70,15 @@ static int random_in = 0;	/* Get input data from /dev/urandom (-r) */
 
 static TEEC_Context ctx;
 static TEEC_Session sess;
+/*
+ * in_shm and out_shm are both IN/OUT to support dynamically choosing
+ * in_place == 1 or in_place == 0.
+ */
 static TEEC_SharedMemory in_shm = {
-	.flags = TEEC_MEM_INPUT
+	.flags = TEEC_MEM_INPUT | TEEC_MEM_OUTPUT
 };
 static TEEC_SharedMemory out_shm = {
-	.flags = TEEC_MEM_OUTPUT
+	.flags = TEEC_MEM_INPUT | TEEC_MEM_OUTPUT
 };
 
 static void errx(const char *msg, TEEC_Result res)
@@ -170,10 +175,12 @@ static void usage(const char *progname)
 	fprintf(stderr, "Usage:\n");
 	fprintf(stderr, "  %s -h\n", progname);
 	fprintf(stderr, "  %s [-v] [-m mode] [-k keysize] ", progname);
-	fprintf(stderr, "[-s bufsize] [-r] [-n loops] [-l iloops] \n");
+	fprintf(stderr, "[-s bufsize] [-r] [-i] [-n loops] [-l iloops] \n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "  -h    Print this help and exit\n");
+	fprintf(stderr, "  -i    Use same buffer for input and output (in ");
+	fprintf(stderr, "place)\n");
 	fprintf(stderr, "  -k    Key size in bits: 128, 192 or 256 [%u]\n",
 			keysize);
 	fprintf(stderr, "  -l    Inner loop iterations (TA calls ");
@@ -197,10 +204,12 @@ static void alloc_shm(size_t sz)
 	res = TEEC_AllocateSharedMemory(&ctx, &in_shm);
 	check_res(res, "TEEC_AllocateSharedMemory");
 
-	out_shm.buffer = NULL;
-	out_shm.size = sz;
-	res = TEEC_AllocateSharedMemory(&ctx, &out_shm);
-	check_res(res, "TEEC_AllocateSharedMemory");
+	if (!in_place) {
+		out_shm.buffer = NULL;
+		out_shm.size = sz;
+		res = TEEC_AllocateSharedMemory(&ctx, &out_shm);
+		check_res(res, "TEEC_AllocateSharedMemory");
+	}
 }
 
 static void free_shm()
@@ -289,6 +298,11 @@ static void prepare_key()
 	check_res(res, "TEEC_InvokeCommand");
 }
 
+static const char *yesno(int v)
+{
+	return (v ? "yes" : "no");
+}
+
 /* Encryption test: buffer of tsize byte. Run test n times. */
 static void run_test(size_t size, unsigned int n, unsigned int l)
 {
@@ -303,20 +317,22 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 		memset(in_shm.buffer, 0, size);
 
 	memset(&op, 0, sizeof(op));
-	op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_PARTIAL_INPUT,
-					 TEEC_MEMREF_PARTIAL_OUTPUT,
+	/* Using INOUT to handle the case in_place == 1 */
+	op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_PARTIAL_INOUT,
+					 TEEC_MEMREF_PARTIAL_INOUT,
 					 TEEC_VALUE_INPUT, TEEC_NONE);
 	op.params[0].memref.parent = &in_shm;
 	op.params[0].memref.offset = 0;
-	op.params[0].memref.size = in_shm.size;
-	op.params[1].memref.parent = &out_shm;
+	op.params[0].memref.size = size;
+	op.params[1].memref.parent = in_place ? &in_shm : &out_shm;
 	op.params[1].memref.offset = 0;
-	op.params[1].memref.size = out_shm.size;
+	op.params[1].memref.size = size;
 	op.params[2].value.a = l;
 
 	verbose("Starting test: %s, %scrypt, keysize=%u bits, size=%zu bytes, ",
 		mode_str(mode), (decrypt ? "de" : "en"), keysize, size);
-	verbose("random=%s, ", random_in ? "yes" : "no");
+	verbose("random=%s, ", yesno(random_in));
+	verbose("in place=%s, ", yesno(in_place));
 	verbose("inner loops=%u, loops=%u\n", l, n);
 
 	while (n-- > 0) {
@@ -348,6 +364,8 @@ int main(int argc, char *argv[])
 	for (i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "-d")) {
 			decrypt = 1;
+		} else if (!strcmp(argv[i], "-i")) {
+			in_place = 1;
 		} else if (!strcmp(argv[i], "-k")) {
 			i++;
 			keysize = atoi(argv[i]);

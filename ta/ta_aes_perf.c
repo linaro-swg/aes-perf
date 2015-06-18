@@ -107,8 +107,8 @@ TEE_Result cmd_process(uint32_t param_types, TEE_Param params[4])
 	void *in, *out;
 	uint32_t insz;
 	uint32_t outsz;
-	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
-						   TEE_PARAM_TYPE_MEMREF_OUTPUT,
+	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INOUT,
+						   TEE_PARAM_TYPE_MEMREF_INOUT,
 						   TEE_PARAM_TYPE_VALUE_INPUT,
 						   TEE_PARAM_TYPE_NONE);
 
