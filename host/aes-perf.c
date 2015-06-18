@@ -347,6 +347,15 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 	free_shm();
 }
 
+#define NEXT_ARG(i) \
+	do { \
+		if (++i == argc) { \
+			fprintf(stderr, "%s: %s: missing argument\n", \
+				argv[0], argv[i-1]); \
+			return 1; \
+		} \
+	} while (0);
+
 int main(int argc, char *argv[])
 {
 	int i;
@@ -367,7 +376,7 @@ int main(int argc, char *argv[])
 		} else if (!strcmp(argv[i], "-i")) {
 			in_place = 1;
 		} else if (!strcmp(argv[i], "-k")) {
-			i++;
+			NEXT_ARG(i);
 			keysize = atoi(argv[i]);
 			if (keysize != 128 && keysize != 192 &&
 				keysize != 256) {
@@ -377,10 +386,10 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		} else if (!strcmp(argv[i], "-l")) {
-			i++;
+			NEXT_ARG(i);
 			l = atoi(argv[i]);
 		} else if (!strcmp(argv[i], "-m")) {
-			i++;
+			NEXT_ARG(i);
 			if (!strcasecmp(argv[i], "ECB"))
 				mode = TA_AES_ECB;
 			else if (!strcasecmp(argv[i], "CBC"))
@@ -396,17 +405,18 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		} else if (!strcmp(argv[i], "-n")) {
-			i++;
+			NEXT_ARG(i);
 			n = atoi(argv[i]);
 		} else if (!strcmp(argv[i], "-r")) {
 			random_in = 1;
 		} else if (!strcmp(argv[i], "-s")) {
-			i++;
+			NEXT_ARG(i);
 			size = atoi(argv[i]);
 		} else if (!strcmp(argv[i], "-v")) {
 			verbosity++;
 		} else {
-			fprintf(stderr, "%s: invalid argument\n", argv[0]);
+			fprintf(stderr, "%s: invalid argument: %s\n",
+				argv[0], argv[i]);
 			usage(argv[0]);
 			return 1;
 		}
