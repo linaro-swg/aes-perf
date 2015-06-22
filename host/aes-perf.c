@@ -55,7 +55,7 @@
  */
 
 static size_t size = 1024;	/* Buffer size (-s) */
-static unsigned int n = 100000;	/* Number of measurements (-n) */
+static unsigned int n = 5000;	/* Number of measurements (-n) */
 static unsigned int l = 1;	/* Inner loops (-l) */
 static int verbosity = 0;	/* Verbosity (-v) */
 static int decrypt = 0;		/* Encrypt by default, -d to decrypt */
@@ -63,7 +63,7 @@ static int keysize = 128;	/* AES key size (-k) */
 static int mode = TA_AES_ECB;	/* AES mode (-m) */
 static int random_in = 0;	/* Get input data from /dev/urandom (-r) */
 static int in_place = 0;	/* 1: use same buffer for in and out (-i) */
-static int warmup = 1;		/* Start with 1 second busy loop (-w) */
+static int warmup = 2;		/* Start with a 2-second busy loop (-w) */
 
 /*
  * TEE client stuff
@@ -194,7 +194,7 @@ static void usage(const char *progname)
 	fprintf(stderr, "  -s    Buffer size (process <x> bytes at a time) ");
 	fprintf(stderr, "[%zu]\n", size);
 	fprintf(stderr, "  -v    Be verbose (use twice for greater effect)\n");
-	fprintf(stderr, "  -w    Warmup time in seconds: execute a busy ");
+	fprintf(stderr, "  -w    Warm-up time in seconds: execute a busy ");
 	fprintf(stderr, "loop before the test\n");
 	fprintf(stderr, "        to mitigate the effects of cpufreq etc. ");
 	fprintf(stderr, "[%u]\n", warmup);
@@ -313,7 +313,7 @@ static void do_warmup()
 		for (i = 0; i < 100000; i++)
 			;
 		get_current_time(&t);
-	} while (timespec_diff_ns(&t0, &t) < warmup * 1000000000);
+	} while (timespec_diff_ns(&t0, &t) < (uint64_t)warmup * 1000000000);
 }
 
 static const char *yesno(int v)
@@ -351,7 +351,7 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 		mode_str(mode), (decrypt ? "de" : "en"), keysize, size);
 	verbose("random=%s, ", yesno(random_in));
 	verbose("in place=%s, ", yesno(in_place));
-	verbose("inner loops=%u, loops=%u\n", l, n);
+	verbose("inner loops=%u, loops=%u, warm-up=%u s\n", l, n, warmup);
 
 	if (warmup)
 		do_warmup();
@@ -381,8 +381,6 @@ int main(int argc, char *argv[])
 {
 	int i;
 	struct timespec ts;
-	struct timespec t0, t1;
-	double elapsed;
 
 	/* Parse command line */
 	for (i = 1; i < argc; i++) {
@@ -454,16 +452,9 @@ int main(int argc, char *argv[])
 	vverbose("Clock resolution is %lu ns\n", ts.tv_sec*1000000000 +
 		ts.tv_nsec);
 
-	get_current_time(&t0);
 	open_ta();
 	prepare_key();
 	run_test(size, n, l);
-	get_current_time(&t1);
-
-	elapsed = timespec_diff_ns(&t0, &t1);
-	elapsed /= 1000000000;
-	printf("Processed %lu bytes in %g seconds ", size * n, elapsed);
-	printf("(%g MiB/s)\n", ((double)(size * n))/(1024 * 1024 * elapsed));
 
 	return 0;
 }
