@@ -321,6 +321,11 @@ static const char *yesno(int v)
 	return (v ? "yes" : "no");
 }
 
+static double mb_per_sec(size_t size, double usec)
+{
+	return (1000000000/usec)*((double)size/(1024*1024));
+}
+
 /* Encryption test: buffer of tsize byte. Run test n times. */
 static void run_test(size_t size, unsigned int n, unsigned int l)
 {
@@ -363,8 +368,9 @@ static void run_test(size_t size, unsigned int n, unsigned int l)
 			vverbose("#");
 	}
 	vverbose("\n");
-	printf("min=%gμs max=%gμs mean=%gμs stddev=%gμs\n", stats.min/1000,
-		stats.max/1000, stats.m/1000, stddev(&stats)/1000);
+	printf("min=%gμs max=%gμs mean=%gμs stddev=%gμs (%gMiB/s)\n",
+	       stats.min/1000, stats.max/1000, stats.m/1000,
+	       stddev(&stats)/1000, mb_per_sec(size, stats.m));
 	free_shm();
 }
 
