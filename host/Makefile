@@ -27,12 +27,12 @@ LDFLAGS += -L$(OPTEE_CLIENT_PATH)/out/export/lib -lteec -lm
 all: $(O)/aes-perf
 
 $(O)/aes-perf: $(objs)
-	@$(cmd-echo-silent) '  CC      $@'
+	$(echo) '  CC      $@'
 	$(q)$(CC) -o $@ $+ $(LDFLAGS)
 
 $(O)/%.o: $(CURDIR)/%.c
 	$(q)mkdir -p $(O)/host
-	@$(cmd-echo-silent) '  CC      $@'
+	$(echo) '  CC      $@'
 	$(q)$(CC) $(CFLAGS) -c $< -o $@
 
 .PHONY: clean

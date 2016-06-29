@@ -13,18 +13,18 @@ endif
 
 ifneq ($V,1)
 export q := @
-export cmd-echo-silent := echo
+export echo := @echo
 else
 export q :=
-export cmd-echo-silent := true
+export echo := @:
 endif
 ifneq ($(filter 4.%,$(MAKE_VERSION)),)  # make-4
 ifneq ($(filter %s ,$(firstword x$(MAKEFLAGS))),)
-export cmd-echo-silent := true
+export echo := @:
 endif
 else                                    # make-3.8x
 ifneq ($(findstring s, $(MAKEFLAGS)),)
-export cmd-echo-silent := true
+export echo := @:
 endif
 endif
 
