@@ -254,18 +254,14 @@ static long get_current_time(struct timespec *ts)
 	}
 }
 
+static uint64_t timespec_to_ns(struct timespec *ts)
+{
+	return ((uint64_t)ts->tv_sec * 1000000000) + ts->tv_nsec;
+}
+
 static uint64_t timespec_diff_ns(struct timespec *start, struct timespec *end)
 {
-	uint64_t ns = 0;
-
-	if (end->tv_nsec < start->tv_nsec) {
-		ns += 1000000000 * (end->tv_sec - start->tv_sec - 1);
-		ns += 1000000000 - start->tv_nsec + end->tv_nsec;
-	} else {
-		ns += 1000000000 * (end->tv_sec - start->tv_sec);
-		ns += end->tv_nsec - start->tv_nsec;
-	}
-	return ns;
+	return timespec_to_ns(end) - timespec_to_ns(start);
 }
 
 static uint64_t run_test_once(void *in, size_t size, TEEC_Operation *op,
