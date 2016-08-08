@@ -326,9 +326,11 @@ static double mb_per_sec(size_t size, double usec)
 static void run_test(size_t size, unsigned int n, unsigned int l)
 {
 	uint64_t t;
-	struct statistics stats = {0, };
+	struct statistics stats;
 	TEEC_Operation op;
 	int n0 = n;
+
+	memset(&stats, 0, sizeof(stats));
 
 	alloc_shm(size);
 
